@@ -1,8 +1,8 @@
 ;;; constants.el --- enter definition of constants into source code
-;; Copyright (c) 2003, 2004, 2005 Carsten Dominik
+;; Copyright (c) 2003, 2004, 2005, 2011, 2013 Carsten Dominik
 
-;; Author: Carsten Dominik <dominik@science.uva.nl>
-;; Version: 2.2
+;; Author: Carsten Dominik <carsten.dominik@gmail.com>
+;; Version: 2.6
 ;; Keywords: programming, languages
 
 ;; This file is not part of GNU Emacs.
@@ -28,15 +28,15 @@
 ;;
 ;; When I write small programs to calculate something, I often need
 ;; the values of some physical constants and units.  I could of course
-;; alway link a big module with all those definitions.  But often I
-;; want the program to run stand-allone, so I prefer to define
+;; always link a big module with all those definitions.  But often I
+;; want the program to run stand-alone, so I prefer to define
 ;; variables for these constants directly.  This package provides the
 ;; command `constants-insert'.  It prompts for one or more variable
 ;; names and inserts definition statements for numerical constants
 ;; into source code.  It does this in the appropriate syntax for many
 ;; different programming languages.
 ;; There are also the commands `constants-get' and `constants-replace'
-;; which just dieplay the value of a constant in the echo area, or replace
+;; which just display the value of a constant in the echo area, or replace
 ;; the name of a constant in a buffer with its value.
 ;;
 ;; The package knows many constants and units, both in the SI and in
@@ -186,7 +186,7 @@
 ;;
 ;; AUTHOR
 ;; ------
-;; Carsten Dominik <dominik@science.uva.nl>
+;; Carsten Dominik <dominik@uva.nl>
 ;;
 ;; Let me know if you are missing a constant in the default setup, if
 ;; you notice that a value of a constant is not correct, or if you
@@ -203,6 +203,12 @@
 ;;
 ;; CHANGES
 ;; -------
+;; Version 2.5
+;; - Better lisp indentation (patch by Federico Beffa <beffa@ieee.org>)
+;;
+;; Version 2.3
+;; - Add a few more constants
+;;
 ;; Version 2.0
 ;; - New commands `constants-get' and `constants-replace'.
 ;;
@@ -217,8 +223,8 @@
 ;; TO DO
 ;; -----
 ;; - Support more programming languages.
-;; - Add expression values for matlab, octave, python, tcl and others.
-;; - Add calc mode.
+;; - Add expression values tcl and others.
+;; - Add calc mode?
 ;; - add these units?
 ;;   - g[u]age, 
 ;;   - (circular) mill
@@ -247,6 +253,7 @@ Legal values are `cgs' and `SI'."
   '(("kk" . "k") ("bk" . "k")
     ("cc" . "c") ("cl" . "c")
     ("hh" . "h") ("hp" . "h")
+    ("GG" . "G") ("gr" . "g")
     )
   "Alist with additional names for some existing constants.  
 Sometime it is better in a program to use different names for
@@ -308,6 +315,7 @@ are used.  Again, `constants-defaults' contains examples."
   '(
     ;; (fortran-mode "doubleprecision %n\nparameter(%n=%v)%t! %d %u" "d")
     (fortran-mode "doubleprecision %n=%v%t! %d %u" "d" "%p*%v" nil)
+    (f90 "doubleprecision %n=%v%t! %d %u" "d" "%p*%v" nil)
     (c-mode "double %n=%v;%t/* %d %u */" "e" "%p*%v" nil)
     (idlwave-mode "%n = %v%t;; %d %u" "d" "%p*%v" nil)
     (text-mode    "%n = %v%t(%d %u)" "d" "%p*%v" nil)
@@ -626,6 +634,8 @@ This is mainly useful for modes which have several incarnations, like
     ("Rmoon"         ""       "Moon radius"            "1.738e6 [m]"          "1.738e8 [cm]")
     ("Rjupiter"      "Rjup"   "Earth radius"           "7.1492e7 [m]"         "7.1492e9 [cm]")
     ("AstronUnit"    "AU"     "Astronomical unit"      "1.49597870691e11 [m]" "1.49597870691e13 [cm]")
+    ("Dmoon"         ""       "Distance Earth-Moon"    "3.844e8 [m]"          "3.844e10 [cm]")
+    ("Djupiter"      "Djup"   "Distance Sun-Jupiter"   "7.78412d11 [m]"       "7.78412d13 [cm]")
     ("Jansky"        "Jy"     "Jansky"                 "1e-26 [W / m^2 Hz]"   "1e-23 [erg/cm^2 s Hz]")
     ("gEarth"        "ga"     "Earth acceleration"     "9.80665e0 [m/s^2]"    "9.80665e2 [cm/s^2]")
 
@@ -684,6 +694,33 @@ The value of this variable must be a function which returns a list
 
 (eval-when-compile (defvar ctable))
 
+(defun constants-is-lisp-like (mode)
+  (save-match-data
+    (string-match "\\(lisp\\|scheme\\)" (symbol-name mode))))
+
+(defun constants-is-set-like ()
+  (save-excursion
+    (condition-case nil
+        (save-match-data
+          (progn (up-list -1)
+                 (or (looking-at "(set[qf!]?\\>") (looking-at "(define\\>"))))
+      (error nil))))     ; return value nil means use default
+
+;;;###autoload
+(defun constants-lisp-like-function ()
+  "Check context for constants insertion."
+  (if (constants-is-set-like)
+      '(emacs-lisp-mode "%n %v%t; %d %u" "e" "(* %p %v)")
+    '(emacs-lisp-mode "(%n %v)%t; %d %u" "e" "(* %p %v)")))
+
+;;;###autoload
+(mapc (lambda (mode-hook)
+        (add-hook mode-hook
+                  (lambda ()
+                    (setq constants-language-function
+                          'constants-lisp-like-function))))
+      '(scheme-mode-hook emacs-lisp-mode-hook lisp-mode-hook))
+
 ;;;###autoload
 (defun constants-insert (&optional unit-system names)
   "Insert one or more natural constant definitions in source code.
@@ -729,7 +766,7 @@ NAMES.  UNIT-SYSTEM may be nil to use the default, but also `SI' or
                      (assq mode constants-languages)
                      (assq t constants-languages)))
 	 format exp-string
-         pmatch factor prefix-name rpl prefix-exp force-prefix process-func
+         pmatch factor name prefix-name rpl prefix-exp force-prefix process-func
 	 const prefix entry entry1 desc value ins beg linelist line vname)
         ;; Check for fentry aliasing
     (while (and fentry
@@ -826,8 +863,9 @@ NAMES.  UNIT-SYSTEM may be nil to use the default, but also `SI' or
             (funcall process-func ins))
         ;; Here comes the insertion stuff for source code editing modes.
         ;; First make sure we start a new line
-        (if (string-match
-             "\\S-" (buffer-substring (point-at-bol) (point-at-eol)))
+        (if (and (string-match
+                  "\\S-" (buffer-substring (point-at-bol) (point-at-eol)))
+                 (not (constants-is-lisp-like mode)))
             ;; non-empty line, insert after this line
             (progn 
               (end-of-line 1) 
@@ -841,25 +879,39 @@ NAMES.  UNIT-SYSTEM may be nil to use the default, but also `SI' or
           (if (string-match "\\(.*\\)%t\\(.*\\)" line)
               (let ((comment-column 42))
                 (insert (match-string 1 line))
-                (indent-to comment-column)
-                (insert (match-string 2 line)))
+                (if (and (constants-is-lisp-like mode)
+                         (or (constants-is-set-like)
+                             (null clist)))
+                    (save-excursion
+                      (progn
+                        (move-to-column comment-column t)
+                        (insert (match-string 2 line))
+                        ;; insert a newline such that paredit's M-) can mode
+                        ;; the closing parentheses to the next line.
+                        (newline-and-indent)))
+                  (progn
+                    (indent-to comment-column)
+                    (insert (match-string 2 line)))))
             (insert line)))
-        (if constants-indent-code
-            (newline-and-indent)
-          (newline))))))
-
+        (unless (and (constants-is-lisp-like mode) (null clist))
+          (if constants-indent-code
+              (newline-and-indent)
+            (newline)))))))
 ;;;###autoload
-(defun constants-get (&optional const message)
+(defun constants-get (&optional const message unit-system)
   "Return the value of CONST as defined in the constants package.
 The will interpret the name of a constant, possible prefix notation
 like Ms for Mega-seconds etc, just like in the constants package.  The
-result also depends on the selected unit system, see `constants-unit-system'.
+result also depends on the selected unit system, see `constants-unit-system',
+which you can overrule with the optional UNIT-SYSTEM argument.
 Interactive calls to this routine prompt for the constant name and place
-the value into the kill ring."
+the value into the kill ring.  By setting MESSAGE, you can force this
+bahavior also in a programmatic call."
 ;; FIXME: There is a lot of code duplication with constants-insert here,
 ;;        maybe we should restructure this at some point.  For now, it works.
   (interactive)
-  (let* ((all-constants (append constants-user-defined constants-defaults))
+  (let* ((constants-unit-system (or unit-system constants-unit-system))
+	 (all-constants (append constants-user-defined constants-defaults))
          (atable (append constants-rename all-constants))
          entry prefix prefix-name pmatch unit factor value ok)
     (if (interactive-p)
